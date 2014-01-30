@@ -11,10 +11,13 @@ module YahooJPStock
 
   module Interface
     require "net/http"
-    def get(uri)
+    def get(uri, cnt_retry = 0)
       Net::HTTP.get_response(URI.parse(uri))
     rescue => e
-      raise InterfaceError, e.message
+      cnt_retry += 1
+      sleep(60) unless e.instance_of?(TimeoutError)
+      retry if cnt_retry < 60
+      raise e
     end
   end
 

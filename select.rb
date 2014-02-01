@@ -24,11 +24,11 @@ class Stock
     tgt_table = "StockPrice#{summary[:symbol]}"
     command =<<SQL
 select date, close from #{tgt_table} 
-    where date <= '#{@idate}' 
+    where date <= '#{$idate}' 
     order by date desc 
     limit #{$period} 
 SQL
-    history = @con.execute(command).reverse.collect { |x|
+    history = $con.execute(command).reverse.collect { |x|
       sy,sm,sd = x[0].split('-').collect {|y| y.to_i }
       [Date.new(sy,sm,sd).jd,x[1]]
     }
@@ -41,8 +41,8 @@ end
 def read_configure
   	conf = YAML.load_file 'configure.yaml'
     select = conf['SELECT']
-    @work_dir = conf['WORK_DIR']
-    if !File.exist?(@work_dir) || File.ftype(@work_dir) != "directory"
+    $work_dir = conf['WORK_DIR']
+    if !File.exist?($work_dir) || File.ftype($work_dir) != "directory"
       raise ConfigError, "invalid WORK_DIR"
     end
     $period = select['PERIOD']
@@ -51,18 +51,19 @@ def read_configure
 end
 
 def sqlite_connect
-  dbname = @work_dir + "/stock.sqlite3"
-  @con = SQLite3::Database.open(dbname)
+  dbname = $work_dir + "/stock.sqlite3"
+  $con = SQLite3::Database.open(dbname)
 end
 
 def read_stocks
-  @stocks = []
+  $stocks = []
   colums = [:name,:symbol,:market_cap]
    
   command =  "select #{colums.join(',')} from toushou1_summary"
 
-  res = @con.execute(command)
+  res = $con.execute(command)
 	pbar = ProgressBar.new('Read stocks',res.size)
+
   res.each { |s|
     pbar.inc
     summary = {} 
@@ -70,8 +71,9 @@ def read_stocks
        summary[x] = s[ind]
     }
     mked = Stock::make(summary)
-    if  mked != nil; @stocks << mked; end
+    $stocks << mked unless mked == nil
   }
+  puts ''
 end
 
 opt = OptionParser.new
@@ -81,9 +83,9 @@ opt.on("-v","show version") { |v|
   exit
 }
 
-@idate = Date.today
+$idate = Date.today
 opt.on("-d VAL", "target date(%y-%m-%d)") { |v|  
-   	@idate = Date.parse(v)
+   	$idate = Date.parse(v)
 }
 
 opt.parse!(ARGV)
@@ -94,13 +96,13 @@ read_configure
 sqlite_connect
 read_stocks
 
-o = File.open("#{@work_dir}/selected.txt",'w')
-o.puts @idate.to_s
+o = File.open("#{$work_dir}/selected.txt",'w')
+o.puts $idate.to_s
 
-pbar = ProgressBar.new('Select pairs',@stocks.size*(@stocks.size-1)/2)
+pbar = ProgressBar.new('Select pairs',$stocks.size*($stocks.size-1)/2)
 
-@stocks.each { |a|
-	@stocks.each { |b|
+$stocks.each { |a|
+	$stocks.each { |b|
 		if a.code >= b.code; next; end
     pbar.inc
 
@@ -135,8 +137,8 @@ rescue => e
     puts x
   }
 ensure
-  if @con && !@con.closed?
-    @con.close
+  if $con && !$con.closed?
+    $con.close
   end
 end
 

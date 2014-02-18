@@ -10,13 +10,17 @@ class ConfigError < StandardError; end
 
 class Stock
 
-  attr_reader :name,:code,:market_cap,:history
+  attr_reader :name,:code,:market_cap,
+    :last_trade_price,:minimum_shares,
+    :history
 
   def initialize(summary,history)
-    @name, @code, @market_cap = 
+    @name, @code, @market_cap, @last_trade_price, @minimum_shares = 
       summary[:name],
       summary[:symbol].to_i,
-      summary[:market_cap]
+      summary[:market_cap].to_i,
+      summary[:last_trade_price].to_i,
+      summary[:minimum_shares].to_i
     @history = history
    end
 
@@ -38,6 +42,29 @@ SQL
   end
 end
 
+module StockAnalyzer 
+  def self.holding (a,b,cost)
+		m = []
+		[a,b].each { |x|
+			m << (x.last_trade_price*x.minimum_shares).to_f
+		}
+		scale = 3*([m[0]/m[1],m[1]/m[0]].max.to_i + 1)
+		pairs = []
+		(1..scale).each { |x|
+		 	(1..scale).each { |y| 
+				if [m[0]*x,m[1]*y].max < cost	
+					pairs << [x*a.minimum_shares,y*b.minimum_shares]
+				end
+			}
+		}
+		sorted = pairs.sort { |s,t|
+			(s[0]*a.last_trade_price - s[1]*b.last_trade_price).abs <=>
+				(t[0]*a.last_trade_price - t[1]*b.last_trade_price).abs 
+		}.first(1)
+		return sorted
+  end
+end
+
 def read_configure
   	conf = YAML.load_file 'configure.yaml'
     select = conf['SELECT']
@@ -47,7 +74,13 @@ def read_configure
     end
     $period = select['PERIOD']
     $market_cap_min = select['MARKET_CAP_MIN'].to_i
-    $saya_soukan_range = select['SAYA_SOUKAN_RANGE'].collect! { |x| x.to_f }
+    $trade_cost_max = select['TRADE_COST_MAX'].to_i
+     
+    soukan = select['SOUKAN']
+    $stock_soukan = soukan['STOCK'].collect { |x| x.to_f }
+    $stock_saya_soukan = soukan['STOCK_SAYA'].collect! { |x| x.to_f }
+    $kaisa_soukan = soukan['KAISA'].collect { |x| x.to_f }
+    $kaisa_kaisasaya_soukan = soukan['KAISA_KAISASAYA'].collect { |x| x.to_f }
 end
 
 def sqlite_connect
@@ -57,7 +90,7 @@ end
 
 def read_stocks
   $stocks = []
-  colums = [:name,:symbol,:market_cap]
+  colums = [:name,:symbol,:market_cap,:last_trade_price,:minimum_shares]
    
   command =  "select #{colums.join(',')} from toushou1_summary"
 
@@ -112,18 +145,42 @@ $stocks.each { |a|
 
     begin
 
-      correl = StockAnalyzer::correl(a.history,b.history)
+      ab = StockAnalyzer::correl(a.history,b.history)
+      next if ab < $stock_soukan[0] || $stock_soukan[1] < ab
 
-      if correl < $saya_soukan_range[0] || $saya_soukan_range[1] < correl
-        next
-      end
+      StockAnalyzer::holding(a,b,$trade_cost_max).each { |m,n| 
+        saya_history = StockAnalyzer::make_saya_history(a.history,b.history,m,n)
+        as = StockAnalyzer::correl(a.history,saya_history)
 
+        next if as < $stock_saya_soukan[0] || $stock_saya_soukan[1] < as 
+
+        bs = StockAnalyzer::correl(b.history,saya_history)
+        next if bs < $stock_saya_soukan[0] || $stock_saya_soukan[1] < bs 
+
+        u_history, v_history = StockAnalyzer::make_kaisa_histories(a.history,b.history)
+
+        uv = StockAnalyzer::correl(u_history,v_history)
+        next if uv < $kaisa_soukan[0] || $kaisa_soukan[1] < uv 
+        
+        k_history = StockAnalyzer::make_saya_history(u_history,v_history,m,n)
+
+        uk = StockAnalyzer::correl(u_history,k_history)
+        next if uk < $kaisa_kaisasaya_soukan[0] || $kaisa_kaisasaya_soukan[1] < uk
+
+        vk = StockAnalyzer::correl(v_history,k_history)
+        next if vk < $kaisa_kaisasaya_soukan[0] || $kaisa_kaisasaya_soukan[1] < vk
+        
+        ab,as,bs,uv,uk,vk = [ab,as,bs,uv,uk,vk].collect { |x| x.round(2) } 
+
+        o.puts "#{a.code} #{b.code} #{m} #{n} " + 
+               "; #{a.name} #{b.name}" +
+               "#{ab} #{as} #{bs} " +
+               "#{uv} #{uk} #{vk} "
+        o.flush
+      }
     rescue
       next
     end
-
-		o.puts "#{a.code} #{b.code} #{correl.round(3)}  ; #{a.name} #{b.name}"
-    o.flush
 
   }
 }

@@ -10,23 +10,26 @@ require_relative 'contrib/ruby-progressbar-0.9/progressbar'
 class RInterface
    @@r = RSRuby::instance
    def self.cmpo0(history)
-       history.find_all { |x| x[0] > @@start }.collect { 
-        |y| Date.jd(y[0]).strftime("%Y/%m/%d") }.join('","') 
+       res = history.find_all { |x| x[0] > @@start }.collect { 
+        |y| Date.jd(y[0]).strftime("%Y/%m/%d") }
+       (res.empty?)? 'NA' : res.join('","') 
    end
    def self.cmpo1(history)
-       history.find_all { |x| x[0] > @@start }.collect { 
-         |y| y[1] }.join(',')
+       res = history.find_all { |x| x[0] > @@start }.collect { 
+         |y| y[1] }
+       (res.empty?)? 'NA' : res.join(',') 
    end
-
+    
    def self.plot (a,b,saya)
     @@start = $idate.jd - $view_period
+
+    return unless a[:history].last[0] >= @@start && b[:history].last[0] >= @@start
       
-     @@r.eval_R(<<-RSCRIPT)
+    @@r.eval_R(<<-RSCRIPT)
       axaxis  <- as.Date(c("#{cmpo0(a[:history])}"))
       a       <- c(#{cmpo1(a[:history])}) 
       bxaxis  <- as.Date(c("#{cmpo0(b[:history])}"))
       b       <- c(#{cmpo1(b[:history])}) 
-
 
       png("#{$work_dir}/#{saya[:image]}",width = 600, height = 600)
       layout(matrix(c(1,2),2,1,byrow=TRUE)) 
@@ -34,7 +37,8 @@ class RInterface
       xl <- c(head(axaxis,1),tail(axaxis,1))
       yl <- c(min(c(min(a)/head(a),min(b)/head(b))),max(c(max(a)/head(a),max(b)/head(b))))
 
-      plot(axaxis,a/head(a),
+
+      plot(axaxis,a/head(a,1),
       xlim=xl,ylim=yl,
       xaxt="n",yaxt="n",type="l",xlab="",ylab="",
       col=1,lty=1,lwd=2)
@@ -92,86 +96,7 @@ class RInterface
 
       dev.off()
     RSCRIPT
-=begin
 
-
-              mva_history:mva,
-              sigma_hisroty:sigma,
-              bollinger2sig:bollinger2sig})
-
-
-
-      xaxis   <- as.Date(c("12/1/1","12/2/1"))
-      a       <- c(1,2)
-      b       <- c(3,2)
-      print(length(xaxis))
-      print(lengthma))
-      print(length(b))
-  
-      print("#{$work_dir}/#{saya[:image]}")
-      png("#{$work_dir}/#{saya[:image]}",width = 900, height = 900)
-      par(cex.lab=1.5)
-      layout(matrix(c(1,2,3,4,5,6),3,2,byrow=TRUE)) 
-
-      lnCol   <- c(1,2)
-      lnType  <- c(1,1)
-      matplot (xaxis,cbind(a/head(a,1),b/head(b,1)),
-      xaxt="n",type="l",
-      col=lnCol,lty=lnType,lwd=2,
-      xlab="Date",ylab="KABUKA (YEN)")
-
-      axis.Date(1,xaxis,format="%y-%m")
-      legend("topleft",
-      c("#{a[:symbol]}","#{b[:symbol]}"),
-      col = lnCol,
-      lty = lnType,
-      lwd = 2)
-      
-      plot(a,b,
-        xlab="#{a[:symbol]} KABUKA (YEN)",
-        ylab="#{b[:symbol]} KABUKA (YEN)")
-      points(tail(a,1),
-           tail(b,1),col="red",pch=3,cex=2)
-
-      dev.off()
-    RSCRIPT
-
-	png("#{$work_dir}/#{l[0...4].join('-')}.png",width = 900, height = 900)
-	par(cex.lab=1.5)
-	layout(matrix(c(1,2,3,4,5,6),3,2,byrow=TRUE)) 
-
-	lnCol   <- c(1,2)
-	lnType  <- c(1,1)
-    matplot (dates_t,cbind(aprice/head(aprice,1),bprice/head(bprice,1)),
-		xaxt="n",type="l",
-		col=lnCol,lty=lnType,lwd=2,
-		xlab="Date",ylab="KABUKA (YEN)")
-    axis.Date(1,dates_t,format="%y-%m")
-	legend("topleft",
-		c("#{a.symbol}","#{b.symbol}"),
-		col = lnCol,
-		lty = lnType,
-		lwd = 2)
-	plot(aprice,bprice,
-		xlab="#{a.symbol} KABUKA (YEN)",
-		ylab="#{b.symbol} KABUKA (YEN)")
-	points(tail(aprice,1),
-		   tail(bprice,1),col="red",pch=3,cex=2)
-
-    hist (adiff,main="",xlab="#{a.symbol} DIFF (YEN)", breaks="Scott")
-    hist (bdiff,main="",xlab="#{a.symbol} DIFF (YEN)", breaks="Scott")
-
-    matplot (dates_t,cbind(saya_t,saya_m_t,
-		saya_m_t+2*saya_sd_t,saya_m_t-2*saya_sd_t),
-		xaxt="n",type="l",lwd=2,xlab="Date",ylab="SAYA (YEN)")
-    axis.Date(1,dates_t,format="%y-%m")
-
-    hist (saya_t_nmd,main="", xlab="SAYA KAIRIRITU", breaks="Scott")
-
-    dev.off()
-    hwriteImage("#{l[0...4].join('-')}.png",rp,br=TRUE,
-		width=900,height=900)
-=end
    end
 end
 
@@ -201,6 +126,7 @@ SQL
   $con.execute(command).flatten.each_with_index { |x,ind|
     $column_jp[$column[ind]] = x
   }
+  $column_jp[:num] = "購入株数<br>(株)"
   $column_jp[:minimum_shares] = '単元株数<br>(株)'
   $column_jp[:market_cap] = '時価総額<br>(百万円)'
   
@@ -260,14 +186,15 @@ def make_saya(a,b)
                StockAnalyzer::make_sigma_history(saya_history,$dma)
   bollinger2sig = StockAnalyzer::make_bollinger_bands(mva,sigma,2);
 
-  saya.merge! ({last_trade_price:saya_history[1].last,
-              purchase_price:a[:purchase_price]*a[:num] - b[:purchase_price]*b[:num],
+  saya.merge! ({last_trade_price:saya_history.last[1],
               last_trade_sigma:sigma.last[1],
               symbol:"#{a[:symbol]}_#{b[:symbol]}",
               image:"#{[a[:symbol],b[:symbol],a[:num],b[:num]].join('-')}.png",
               mva_history:mva,
               sigma_hisroty:sigma,
               bollinger2sig:bollinger2sig})
+  saya.merge! ({purchase_price:a[:purchase_price]*a[:num] - b[:purchase_price]*b[:num]}) if $holding
+  saya
 end
 
 opt = OptionParser.new
@@ -301,7 +228,7 @@ o.puts <<HTML
 <header>
 <meta http-equiv="Content-Type" content='text/html; charset=utf-8'>
 <meta http-equiv='Content-Style-Type' content='text/css'>
-<title>j-saya:report</title>
+<title>#{File.basename($ifname)}</title>
 <style type="text/css">
 <!--
 tr{
@@ -327,13 +254,14 @@ File.open($ifname,'r').each_with_index do |line,ind|
   a, b = {}, {}
   [a,b].each_with_index { |c,j|
     c[:symbol], c[:num] = l[j],l[j+2].to_i
-    c[:purchase_price] = l[j+4].to_i if $holding
     c.merge!(read_stock(c[:symbol]))
-
-    sy,sm,sd = l[6].split('-').collect {|y| y.to_i }
-    c[:purchase_day] = l[6]
-    sy,sm,sd = l[6].split('-').collect {|y| y.to_i }
-    c[:retention_period] = Date.today.jd - Date.new(sy,sm,sd).jd
+    if $holding 
+      c[:purchase_price] = l[j+4].to_i if $holding
+      sy,sm,sd = l[6].split('-').collect {|y| y.to_i }
+      c[:purchase_day] = l[6]
+      sy,sm,sd = l[6].split('-').collect {|y| y.to_i }
+      c[:retention_period] = Date.today.jd - Date.new(sy,sm,sd).jd
+    end
   }
   
   next unless [a,b].all? { |c| c[:history] != nil }
@@ -352,17 +280,17 @@ o.puts <<HTML
 
 <table border='1'>
 <tr>
-<td>#{$column_jp[:symbol]}</td><td>#{$column_jp[:name]}</td><td>#{$column_jp[:last_trade_price]}</td>
+<td>#{$column_jp[:symbol]}</td><td>#{$column_jp[:name]}</td><td>#{$column_jp[:last_trade_price]}</td><td>#{$column_jp[:num]}</td>
 #{"<td>#{$column_jp[:purchase_price]}</td><td>#{$column_jp[:purchase_day]}</td><td>#{$column_jp[:retention_period]}</td>" if $holding}
 <td>#{$column_jp[:minimum_shares]}</td><td>#{$column_jp[:market_cap]}</td><td>#{$column_jp[:outstand_margin_rate]}</td>
 </tr>
 <tr>
-<td>#{a[:symbol]}</td><td>#{a[:name]}</td><td>#{a[:last_trade_price]}</td>
+<td>#{a[:symbol]}</td><td>#{a[:name]}</td><td>#{a[:last_trade_price]}</td><td>#{a[:num]}</td>
 #{"<td>#{a[:purchase_price]}</td><td rowspan='2'>#{a[:purchase_day]}</td><td rowspan='2'>#{a[:retention_period]}</td>" if $holding}
 <td>#{a[:minimum_shares]}</td><td>#{a[:market_cap]}</td><td>#{a[:outstand_margin_rate]}</td>
 </tr>
 <tr>
-<td>#{b[:symbol]}</td><td>#{b[:name]}</td><td>#{b[:last_trade_price]}</td>
+<td>#{b[:symbol]}</td><td>#{b[:name]}</td><td>#{b[:last_trade_price]}</td><td>#{b[:num]}</td>
 #{"<td>#{b[:purchase_price]}</td>" if $holding}
 <td>#{b[:minimum_shares]}</td><td>#{b[:market_cap]}</td><td>#{b[:outstand_margin_rate]}</td>
 </tr>
@@ -370,14 +298,14 @@ o.puts <<HTML
 <br>
 <table border='1'>
 <tr>
-<td rowspan='2'>サヤ値<br>(円)</td><td rowspan='2'>購入値<br>(円)</td><td rowspan='2'>サヤσ<br>(円)</td>
+<td rowspan='2'>サヤ値<br>(円)</td>#{"<td rowspan='2'>購入値<br>(円)</td>" if $holding}<td rowspan='2'>サヤσ<br>(円)</td>
 <td colspan='6'>相関係数</td>
 </tr>
 <tr>
 <td>ab</td><td>as</td><td>bs</td><td>AB</td><td>AS</td><td>BS</td>
 </tr>
 <tr>
-<td>#{saya[:last_trade_price]}</td><td>#{saya[:purchase_price]}</td><td>#{saya[:last_trade_sigma]}</td>
+<td>#{saya[:last_trade_price]}</td>#{"<td>#{saya[:purchase_price]}" if $holding}</td><td>#{saya[:last_trade_sigma]}</td>
 <td>#{saya[:ab]}</td><td>#{saya[:as]}</td><td>#{saya[:bs]}</td><td>#{saya[:AB]}</td><td>#{saya[:AS]}</td><td>#{saya[:BS]}</td>
 </tr>
 </table>
